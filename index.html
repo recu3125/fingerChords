@@ -2,19 +2,46 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>🎹</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #f0f0f0; }
-        .container { position: relative; width: 640px; height: 480px; border: 2px solid #333; }
-        .output_canvas { position: absolute; left: 0; top: 0; }
-        .input_video { display: none; }
+        body { 
+            font-family: sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            background-color: #f0f0f0; 
+            margin: 0;
+            padding: 10px 0;
+            box-sizing: border-box;
+        }
+        .container { 
+            position: relative; 
+            width: 95vw;
+            max-width: 640px;
+            height: auto;
+            aspect-ratio: 640 / 480; 
+            border: 2px solid #333; 
+            background: #111;
+        }
+        .output_canvas { 
+            position: absolute; 
+            left: 0; 
+            top: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .input_video { 
+            display: none; 
+            width: 100%;
+            height: 100%;
+        }
         #startButton { margin: 20px; padding: 10px 20px; font-size: 1.2em; cursor: pointer; }
         #gestureInfo { font-size: 1.5em; color: #444; margin-bottom: 10px; }
 
@@ -133,7 +160,7 @@
 
             return angleRad * (180.0 / Math.PI);
         }
-		
+        
         function getGesture(hand, handedness, isHandUpright) {
             let fingersUp = [false, false, false, false, false]; 
             
@@ -171,7 +198,6 @@
 
             const [thumb, index, middle, ring, pinky] = fingersUp;
 
-			console.log(fingersUp)
             if (index && !middle && !ring && !pinky && !thumb) return 1; 
             if (index && middle && !ring && !pinky && !thumb) return 2; 
             if (index && middle && ring && !pinky && !thumb) return 3; 
@@ -179,7 +205,7 @@
             if (index && middle && ring && pinky && thumb) return 5; 
             if (!index && !middle && !ring && !pinky && thumb) return 6; 
             if (index && !middle && !ring && !pinky && thumb) return 7; 
-			
+            
             return 0; 
         }
 
@@ -217,13 +243,37 @@
         });
         hands.onResults(onResults);
 
-        const camera = new Camera(videoElement, {
-            onFrame: async () => {
+        async function startCamera() {
+            const constraints = {
+                video: {
+                    width: 640,
+                    height: 480,
+                    facingMode: 'user' 
+                }
+            };
+        
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoElement.srcObject = stream;
+                
+                await new Promise((resolve) => {
+                    videoElement.onloadedmetadata = () => {
+                        videoElement.play();
+                        resolve();
+                    };
+                });
+            } catch (err) {
+                console.error("카메라 접근 오류:", err);
+                alert("카메라에 접근할 수 없습니다. 권한을 확인해주세요.");
+            }
+        }
+
+        async function detectionLoop() {
+            if (videoElement.readyState >= 3) {
                 await hands.send({ image: videoElement });
-            },
-            width: 640,
-            height: 480
-        });
+            }
+            requestAnimationFrame(detectionLoop);
+        }
 
         startButton.addEventListener('click', async () => {
             bpmDisplay.textContent = currentBpm; 
@@ -232,7 +282,10 @@
             Tone.Transport.bpm.value = currentBpm;
             Tone.Transport.scheduleRepeat(playChord, '4n'); 
             Tone.Transport.start();
-            camera.start();
+            
+            await startCamera();
+            detectionLoop();
+            
             startButton.style.display = 'none'; 
         });
 
