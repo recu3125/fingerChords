@@ -25,22 +25,24 @@
             position: relative; 
             width: 95vw;
             max-width: 640px;
-            height: auto;
-            aspect-ratio: 640 / 480; 
+            /* height: auto; <-- 제거 */
             border: 2px solid #333; 
             background: #111;
         }
         .output_canvas { 
-            position: absolute; 
-            left: 0; 
-            top: 0;
+            /* --- CSS 수정 --- */
+            /* position: absolute; <-- 제거 */
+            /* left: 0; <-- 제거 */
+            /* top: 0; <-- 제거 */
+            display: block; /* 추가 */
             width: 100%;
-            height: 100%;
+            height: auto;
+            /* ----------------- */
         }
         .input_video { 
             display: none; 
             width: 100%;
-            height: 100%;
+            /* height: auto; <-- 제거 */
         }
         #startButton { margin: 20px; padding: 10px 20px; font-size: 1.2em; cursor: pointer; }
         #gestureInfo { font-size: 1.5em; color: #444; margin-bottom: 10px; }
@@ -214,11 +216,12 @@
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             canvasCtx.translate(canvasElement.width, 0);
             canvasCtx.scale(-1, 1);
+            
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
-                const handedness = results.multiHandedness[0].label; 
+                const handedness = results.multiHandLandmarks[0].label; 
                 
                 drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
                 drawLandmarks(canvasCtx, hand, { color: '#FF0000', lineWidth: 2 });
@@ -246,9 +249,9 @@
         async function startCamera() {
             const constraints = {
                 video: {
-                    width: 640,
-                    height: 480,
-                    facingMode: 'user' 
+                    facingMode: 'user',
+                    height: { ideal: 480 },
+                    aspectRatio: { ideal: 16/9 }
                 }
             };
         
@@ -259,6 +262,13 @@
                 await new Promise((resolve) => {
                     videoElement.onloadedmetadata = () => {
                         videoElement.play();
+
+                        const videoWidth = videoElement.videoWidth;
+                        const videoHeight = videoElement.videoHeight;
+
+                        canvasElement.width = videoWidth;
+                        canvasElement.height = videoHeight;
+
                         resolve();
                     };
                 });
