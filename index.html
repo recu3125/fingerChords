@@ -286,17 +286,20 @@
         }
 
         startButton.addEventListener('click', async () => {
-            bpmDisplay.textContent = currentBpm; 
-            await Tone.start();
-            console.log("Audio Context Started");
-            Tone.Transport.bpm.value = currentBpm;
-            Tone.Transport.scheduleRepeat(playChord, '4n'); 
-            Tone.Transport.start();
-            
-            await startCamera();
-            detectionLoop();
-            
-            startButton.style.display = 'none'; 
+          bpmDisplay.textContent = currentBpm;
+          await Tone.start();
+          console.log("Audio Context Started");
+
+          await Tone.loaded(); 
+
+          Tone.Transport.bpm.value = currentBpm;
+          Tone.Transport.scheduleRepeat(playChord, '4n');
+          Tone.Transport.start();
+
+          await startCamera();
+          detectionLoop();
+
+          startButton.style.display = 'none';
         });
 
         console.log("준비 완료. '시작하기' 버튼을 누르세요.");
