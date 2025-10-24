@@ -85,224 +85,235 @@
     <button id="startButton">시작하기</button>
 
     <script type="module">
-        const videoElement = document.querySelector('.input_video');
-        const canvasElement = document.querySelector('.output_canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        const startButton = document.getElementById('startButton');
-        const gestureInfo = document.getElementById('gestureInfo');
-
-        const bpmDown = document.getElementById('bpmDown');
-        const bpmUp = document.getElementById('bpmUp');
-        const bpmDisplay = document.getElementById('bpmDisplay');
-        let currentBpm = 100;
-
-        const sampler = new Tone.Sampler({
+      const videoElement = document.querySelector('.input_video');
+      const canvasElement = document.querySelector('.output_canvas');
+      const canvasCtx = canvasElement.getContext('2d');
+      const startButton = document.getElementById('startButton');
+      const gestureInfo = document.getElementById('gestureInfo');
+  
+      const bpmDown = document.getElementById('bpmDown');
+      const bpmUp = document.getElementById('bpmUp');
+      const bpmDisplay = document.getElementById('bpmDisplay');
+      let currentBpm = 100;
+  
+      // --- 1. sampler 변수를 여기서 선언만 합니다. ---
+      let sampler; 
+  
+      const ROOT_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
+      let currentGesture = 0;
+      let isMajor = true; 
+  
+      function getChordNotes(rootNote, isMajor) {
+          const root = Tone.Frequency(rootNote);
+          const third = isMajor ? root.transpose(4) : root.transpose(3);
+          const fifth = root.transpose(7);
+          const rootOctaveDown = root.transpose(-12); 
+          return [root.toNote(), third.toNote(), fifth.toNote(), rootOctaveDown.toNote()];
+      }
+  
+      function playChord(time) {
+          // --- 2. sampler가 초기화되었는지 확인하는 로직 추가 ---
+          if (!sampler) return; 
+  
+          if (currentGesture >= 1 && currentGesture <= 7) {
+              const root = ROOT_NOTES[currentGesture - 1];
+              const chord = getChordNotes(root, isMajor);
+              sampler.triggerAttackRelease(chord, '4n', time);
+              gestureInfo.textContent = `${root} ${isMajor ? ' Maj' : ' min'}`;
+          } else {
+              gestureInfo.textContent = '---';
+          }
+      }
+  
+      function updateBpm(newBpm) {
+          currentBpm = Math.max(40, Math.min(240, newBpm));
+          Tone.Transport.bpm.value = currentBpm;
+          bpmDisplay.textContent = currentBpm;
+      }
+  
+      bpmUp.addEventListener('click', () => {
+          updateBpm(currentBpm + 10);
+      });
+  
+      bpmDown.addEventListener('click', () => {
+          updateBpm(currentBpm - 10);
+      });
+  
+      function isHandUp(hand) {
+          const wrist = hand[0]; 
+          const middleKnuckle = hand[9]; 
+          return middleKnuckle.y < wrist.y;
+      }
+  
+      function getAngle(a, b, c) {
+          const v1 = { x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) };
+          const v2 = { x: c.x - b.x, y: c.y - b.y, z: (c.z || 0) - (b.z || 0) };
+  
+          const v1Mag = Math.sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z);
+          const v2Mag = Math.sqrt(v2.x * v2.x + v2.y * v2.y + v2.z * v2.z);
+  
+          if (v1Mag === 0 || v2Mag === 0) return 180; 
+  
+          const dotProduct = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+  
+          const cosTheta = Math.max(-1.0, Math.min(1.0, dotProduct / (v1Mag * v2Mag)));
+          
+          const angleRad = Math.acos(cosTheta);
+  
+          return angleRad * (180.0 / Math.PI);
+      }
+      
+      function getGesture(hand, handedness, isHandUpright) {
+          let fingersUp = [false, false, false, false, false]; 
+          
+          const tipIds = [4, 8, 12, 16, 20]; 
+          const dipIds = [null, 7, 11, 15, 19]; 
+          const pipIds = [3, 6, 10, 14, 18]; 
+          const mcpIds = [2, 5, 9, 13, 17]; 
+  
+          const STRAIGHT_THRESHOLD = 150.0; 
+  
+          for (let i = 1; i < 5; i++) {
+              const mcp = hand[mcpIds[i]];
+              const pip = hand[pipIds[i]];
+              const dip = hand[dipIds[i]];
+              const tip = hand[tipIds[i]];
+  
+              const pipAngle = getAngle(mcp, pip, dip);
+              const dipAngle = getAngle(pip, dip, tip);
+  
+              if (pipAngle > STRAIGHT_THRESHOLD && dipAngle > STRAIGHT_THRESHOLD) {
+                  fingersUp[i] = true;
+              } else {
+                  fingersUp[i] = false;
+              }
+          }
+  
+          const thumbTip = hand[tipIds[0]]; 
+          const thumbPip = hand[pipIds[0]]; 
+  
+          if (handedness === 'Right') {
+              fingersUp[0] = thumbTip.x < thumbPip.x;
+          } else { 
+              fingersUp[0] = thumbTip.x > thumbPip.x;
+          }
+  
+          const [thumb, index, middle, ring, pinky] = fingersUp;
+  
+          if (index && !middle && !ring && !pinky && !thumb) return 1; 
+          if (index && middle && !ring && !pinky && !thumb) return 2; 
+          if (index && middle && ring && !pinky && !thumb) return 3; 
+          if (index && middle && ring && pinky && !thumb) return 4; 
+          if (index && middle && ring && pinky && thumb) return 5; 
+          if (!index && !middle && !ring && !pinky && thumb) return 6; 
+          if (index && !middle && !ring && !pinky && thumb) return 7; 
+          
+          return 0; 
+      }
+  
+      function onResults(results) {
+          canvasCtx.save();
+          canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+          canvasCtx.translate(canvasElement.width, 0);
+          canvasCtx.scale(-1, 1);
+          
+          canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+  
+          if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+              const hand = results.multiHandLandmarks[0];
+              const handedness = results.multiHandLandmarks[0].label; 
+              
+              drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
+              drawLandmarks(canvasCtx, hand, { color: '#FF0000', lineWidth: 2 });
+              
+              isMajor = isHandUp(hand); 
+              currentGesture = getGesture(hand, handedness, isMajor); 
+          } else {
+              currentGesture = 0;
+          }
+          
+          canvasCtx.restore(); 
+      }
+  
+      const hands = new Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+      hands.setOptions({
+          maxNumHands: 1, 
+          modelComplexity: 1,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+      });
+      hands.onResults(onResults);
+  
+      async function startCamera() {
+          const constraints = {
+              video: {
+                  facingMode: 'user',
+                  height: { ideal: 480 },
+                  aspectRatio: { ideal: 16/9 }
+              }
+          };
+      
+          try {
+              const stream = await navigator.mediaDevices.getUserMedia(constraints);
+              videoElement.srcObject = stream;
+              
+              await new Promise((resolve) => {
+                  videoElement.onloadedmetadata = () => {
+                      videoElement.play();
+  
+                      const videoWidth = videoElement.videoWidth;
+                      const videoHeight = videoElement.videoHeight;
+  
+                      canvasElement.width = videoWidth;
+                      canvasElement.height = videoHeight;
+  
+                      resolve();
+                  };
+              });
+          } catch (err) {
+              console.error("카메라 접근 오류:", err);
+              alert("카메라에 접근할 수 없습니다. 권한을 확인해주세요.");
+          }
+      }
+  
+      async function detectionLoop() {
+          if (videoElement.readyState >= 3) {
+              await hands.send({ image: videoElement });
+          }
+          requestAnimationFrame(detectionLoop);
+      }
+  
+      startButton.addEventListener('click', async () => {
+        bpmDisplay.textContent = currentBpm;
+        
+        // --- 3. 오디오 컨텍스트를 먼저 활성화합니다. ---
+        await Tone.start();
+        console.log("Audio Context Started");
+  
+        // --- 4. 활성화된 후에 sampler를 생성합니다. ---
+        sampler = new Tone.Sampler({
             urls: { "C4": "C4.mp3", "D#4": "Ds4.mp3", "F#4": "Fs4.mp3", "A4": "A4.mp3", "C3":"C3.mp3" }, 
             release: 1,
             baseUrl: "https://tonejs.github.io/audio/salamander/",
         }).toDestination();
-
-        const ROOT_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
-        let currentGesture = 0;
-        let isMajor = true; 
-
-        function getChordNotes(rootNote, isMajor) {
-            const root = Tone.Frequency(rootNote);
-            const third = isMajor ? root.transpose(4) : root.transpose(3);
-            const fifth = root.transpose(7);
-            const rootOctaveDown = root.transpose(-12); 
-            return [root.toNote(), third.toNote(), fifth.toNote(), rootOctaveDown.toNote()];
-        }
-
-        function playChord(time) {
-            if (currentGesture >= 1 && currentGesture <= 7) {
-                const root = ROOT_NOTES[currentGesture - 1];
-                const chord = getChordNotes(root, isMajor);
-                sampler.triggerAttackRelease(chord, '4n', time);
-                gestureInfo.textContent = `${root} ${isMajor ? ' Maj' : ' min'}`;
-            } else {
-                gestureInfo.textContent = '---';
-            }
-        }
-
-        function updateBpm(newBpm) {
-            currentBpm = Math.max(40, Math.min(240, newBpm));
-            Tone.Transport.bpm.value = currentBpm;
-            bpmDisplay.textContent = currentBpm;
-        }
-
-        bpmUp.addEventListener('click', () => {
-            updateBpm(currentBpm + 10);
-        });
-
-        bpmDown.addEventListener('click', () => {
-            updateBpm(currentBpm - 10);
-        });
-
-        function isHandUp(hand) {
-            const wrist = hand[0]; 
-            const middleKnuckle = hand[9]; 
-            return middleKnuckle.y < wrist.y;
-        }
-
-        function getAngle(a, b, c) {
-            const v1 = { x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) };
-            const v2 = { x: c.x - b.x, y: c.y - b.y, z: (c.z || 0) - (b.z || 0) };
-
-            const v1Mag = Math.sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z);
-            const v2Mag = Math.sqrt(v2.x * v2.x + v2.y * v2.y + v2.z * v2.z);
-
-            if (v1Mag === 0 || v2Mag === 0) return 180; 
-
-            const dotProduct = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-
-            const cosTheta = Math.max(-1.0, Math.min(1.0, dotProduct / (v1Mag * v2Mag)));
-            
-            const angleRad = Math.acos(cosTheta);
-
-            return angleRad * (180.0 / Math.PI);
-        }
-        
-        function getGesture(hand, handedness, isHandUpright) {
-            let fingersUp = [false, false, false, false, false]; 
-            
-            const tipIds = [4, 8, 12, 16, 20]; 
-            const dipIds = [null, 7, 11, 15, 19]; 
-            const pipIds = [3, 6, 10, 14, 18]; 
-            const mcpIds = [2, 5, 9, 13, 17]; 
-
-            const STRAIGHT_THRESHOLD = 150.0; 
-
-            for (let i = 1; i < 5; i++) {
-                const mcp = hand[mcpIds[i]];
-                const pip = hand[pipIds[i]];
-                const dip = hand[dipIds[i]];
-                const tip = hand[tipIds[i]];
-
-                const pipAngle = getAngle(mcp, pip, dip);
-                const dipAngle = getAngle(pip, dip, tip);
-
-                if (pipAngle > STRAIGHT_THRESHOLD && dipAngle > STRAIGHT_THRESHOLD) {
-                    fingersUp[i] = true;
-                } else {
-                    fingersUp[i] = false;
-                }
-            }
-
-            const thumbTip = hand[tipIds[0]]; 
-            const thumbPip = hand[pipIds[0]]; 
-
-            if (handedness === 'Right') {
-                fingersUp[0] = thumbTip.x < thumbPip.x;
-            } else { 
-                fingersUp[0] = thumbTip.x > thumbPip.x;
-            }
-
-            const [thumb, index, middle, ring, pinky] = fingersUp;
-
-            if (index && !middle && !ring && !pinky && !thumb) return 1; 
-            if (index && middle && !ring && !pinky && !thumb) return 2; 
-            if (index && middle && ring && !pinky && !thumb) return 3; 
-            if (index && middle && ring && pinky && !thumb) return 4; 
-            if (index && middle && ring && pinky && thumb) return 5; 
-            if (!index && !middle && !ring && !pinky && thumb) return 6; 
-            if (index && !middle && !ring && !pinky && thumb) return 7; 
-            
-            return 0; 
-        }
-
-        function onResults(results) {
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.translate(canvasElement.width, 0);
-            canvasCtx.scale(-1, 1);
-            
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const hand = results.multiHandLandmarks[0];
-                const handedness = results.multiHandLandmarks[0].label; 
-                
-                drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 5 });
-                drawLandmarks(canvasCtx, hand, { color: '#FF0000', lineWidth: 2 });
-                
-                isMajor = isHandUp(hand); 
-                currentGesture = getGesture(hand, handedness, isMajor); 
-            } else {
-                currentGesture = 0;
-            }
-            
-            canvasCtx.restore(); 
-        }
-
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-        hands.setOptions({
-            maxNumHands: 1, 
-            modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-        hands.onResults(onResults);
-
-        async function startCamera() {
-            const constraints = {
-                video: {
-                    facingMode: 'user',
-                    height: { ideal: 480 },
-                    aspectRatio: { ideal: 16/9 }
-                }
-            };
-        
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                videoElement.srcObject = stream;
-                
-                await new Promise((resolve) => {
-                    videoElement.onloadedmetadata = () => {
-                        videoElement.play();
-
-                        const videoWidth = videoElement.videoWidth;
-                        const videoHeight = videoElement.videoHeight;
-
-                        canvasElement.width = videoWidth;
-                        canvasElement.height = videoHeight;
-
-                        resolve();
-                    };
-                });
-            } catch (err) {
-                console.error("카메라 접근 오류:", err);
-                alert("카메라에 접근할 수 없습니다. 권한을 확인해주세요.");
-            }
-        }
-
-        async function detectionLoop() {
-            if (videoElement.readyState >= 3) {
-                await hands.send({ image: videoElement });
-            }
-            requestAnimationFrame(detectionLoop);
-        }
-
-        startButton.addEventListener('click', async () => {
-          bpmDisplay.textContent = currentBpm;
-          await Tone.start();
-          console.log("Audio Context Started");
-
-          await Tone.loaded(); 
-
-          Tone.Transport.bpm.value = currentBpm;
-          Tone.Transport.scheduleRepeat(playChord, '4n');
-          Tone.Transport.start();
-
-          await startCamera();
-          detectionLoop();
-
-          startButton.style.display = 'none';
-        });
-
-        console.log("준비 완료. '시작하기' 버튼을 누르세요.");
-    </script>
+  
+        // --- 5. 새로 생성된 sampler의 오디오 파일 로드를 기다립니다. ---
+        await Tone.loaded(); 
+        console.log("Sampler Loaded");
+  
+        Tone.Transport.bpm.value = currentBpm;
+        Tone.Transport.scheduleRepeat(playChord, '4n');
+        Tone.Transport.start();
+  
+        await startCamera();
+        detectionLoop();
+  
+        startButton.style.display = 'none';
+      });
+  
+      console.log("준비 완료. '시작하기' 버튼을 누르세요.");
+  </script>
 </body>
 </html>
